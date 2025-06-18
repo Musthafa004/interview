@@ -3,9 +3,9 @@
 import streamlit as st
 import openai
 
-st.set_page_config(page_title="FinalRound AI Clone", layout="centered")
+st.set_page_config(page_title="interview AI Clone", layout="centered")
 
-st.title("🧠 FinalRound Interview Assistant")
+st.title("🧠 Interview Assistant")
 st.markdown("""
 This app simulates an interview scenario:
 - You enter the interviewer's **question**

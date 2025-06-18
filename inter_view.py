@@ -1,87 +1,59 @@
-# interview_assistant.py
-
 import streamlit as st
-import openai
-import numpy as np
-import tempfile
-import os
 from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, ClientSettings
-import av
-import queue
+import openai, numpy as np, tempfile, os, queue
 
-# Set OpenAI API key
-openai.api_key = st.secrets["OPENAI_API_KEY"]  # Use Streamlit secrets for safety
-
-# UI Header
 st.set_page_config(page_title="Interview Assistant", layout="centered")
-st.title("🎤 Ahamed's Interview Assistant")
+st.title("🎤 Ahamed's Voice Interview AI")
 st.markdown("""
-This app listens to the interviewer's voice (not yours), transcribes the question, and gives you a perfect answer to read.
-Just speak normally — it will wait for the interviewer to ask and respond with a sentence-by-sentence guide. 🔁
+The app listens automatically for the interviewer's voice (not yours), transcribes it with Whisper API, gets ChatGPT's answer, and shows it sentence‑by‑sentence for you to read aloud — all without manual input!
 """)
 
-# Queue to collect audio
+openai.api_key = st.secrets["OPENAI_API_KEY"]
+
 audio_q = queue.Queue()
 
-class AudioProcessor(AudioProcessorBase):
-    def __init__(self):
-        self.recording = []
-        self.threshold = 1500  # Adjust for speaker separation
-
-    def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
-        audio = frame.to_ndarray()
-        volume = np.abs(audio).mean()
-
-        if volume > self.threshold:
-            audio_q.put(audio.tobytes())
-
+class Proc(AudioProcessorBase):
+    def recv(self, frame):
+        audio = frame.to_ndarray().flatten()
+        vol = np.abs(audio).mean()
+        if vol > 800:
+            audio_q.put(frame.to_ndarray().tobytes())
         return frame
 
-# Start recording from mic
 webrtc_streamer(key="mic",
-                mode="SENDONLY",
-                client_settings=ClientSettings(
-                    media_stream_constraints={"audio": True, "video": False},
-                    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-                ),
-                audio_processor_factory=AudioProcessor)
+    mode="SENDONLY",
+    audio_processor_factory=Proc,
+    client_settings=ClientSettings(
+        media_stream_constraints={"audio": True, "video": False},
+        rtc_configuration={"iceServers":[{"urls": ["stun:stun.l.google.com:19302"]}]},
+    ),
+)
 
-# Process when button clicked
-if st.button("🧠 Process Interviewer's Question"):
+if st.button("🔄 Process Latest Question"):
     if audio_q.empty():
-        st.warning("No audio detected. Try speaking a little louder or closer to mic.")
+        st.warning("No audio detected. Please speak the interviewer's question louder.")
     else:
-        # Save to temporary WAV
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
             while not audio_q.empty():
                 f.write(audio_q.get())
-            audio_path = f.name
+            path = f.name
 
-        st.success("🎧 Audio recorded. Transcribing...")
+        st.success("🎧 Audio captured, transcribing…")
+        with open(path, "rb") as af:
+            text = openai.Audio.transcribe("whisper-1", af)["text"]
+        st.markdown(f"#### 🗣️ Detected question:\n> {text}")
 
-        # Transcribe with Whisper API
-        with open(audio_path, "rb") as af:
-            transcript = openai.Audio.transcribe("whisper-1", af)
-            question = transcript["text"]
+        st.success("⏳ Getting ChatGPT answer…")
+        ans = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role":"system","content":"You are an interview coach giving professional concise answers."},
+                {"role":"user","content":text}
+            ],
+        )["choices"][0]["message"]["content"]
 
-        st.markdown(f"#### 🗣️ Detected Question:")
-        st.info(question)
-
-        # Get ChatGPT answer
-        with st.spinner("Generating answer..."):
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You're an expert helping with interviews. Answer clearly and professionally."},
-                    {"role": "user", "content": f"{question}"}
-                ]
-            )
-            answer = response["choices"][0]["message"]["content"]
-
-        # Split answer into sentences for user to read
-        sentences = answer.split(". ")
-        st.markdown("### 📖 Read This Slowly:")
-        for i, s in enumerate(sentences):
-            st.markdown(f"**{i+1}.** {s.strip().rstrip('.')}.")
-
-        os.remove(audio_path)
+        st.markdown("### 📖 Read this answer:")
+        for idx, sent in enumerate(ans.split(". "), start=1):
+            st.markdown(f"**{idx}.** {sent.strip().rstrip('.')}.")
+        os.remove(path)
+        

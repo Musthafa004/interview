@@ -1,88 +1,87 @@
+# interview_assistant.py
+
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, AudioProcessorBase
 import openai
 import numpy as np
-import av
 import tempfile
-import time
+import os
+from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, ClientSettings
+import av
+import queue
 
-st.set_page_config(page_title="AI Interview Assistant", layout="centered")
-st.title("🎙️ Interview Assistant with Speaker Detection")
+# Set OpenAI API key
+openai.api_key = st.secrets["OPENAI_API_KEY"]  # Use Streamlit secrets for safety
 
+# UI Header
+st.set_page_config(page_title="Interview Assistant", layout="centered")
+st.title("🎤 Ahamed's Interview Assistant")
 st.markdown("""
-- 👤 First, speak a short sentence to register your voice
-- 🧠 Then, it listens continuously
-- 🎯 If someone else speaks (interviewer), it responds
+This app listens to the interviewer's voice (not yours), transcribes the question, and gives you a perfect answer to read.
+Just speak normally — it will wait for the interviewer to ask and respond with a sentence-by-sentence guide. 🔁
 """)
 
-openai_key = st.text_input("🔑 Enter your OpenAI API Key", type="password")
-openai.api_key = openai_key
+# Queue to collect audio
+audio_q = queue.Queue()
 
-if "reference_voice" not in st.session_state:
-    st.session_state.reference_voice = None
-if "last_transcript" not in st.session_state:
-    st.session_state.last_transcript = ""
-
-st.header("Step 1: Register Your Voice")
-record_ref = st.button("🎙️ Record My Voice")
-
-class VoiceCapture(AudioProcessorBase):
+class AudioProcessor(AudioProcessorBase):
     def __init__(self):
-        self.recording = False
-        self.audio_chunks = []
-        self.last_process_time = time.time()
+        self.recording = []
+        self.threshold = 1500  # Adjust for speaker separation
 
     def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
         audio = frame.to_ndarray()
         volume = np.abs(audio).mean()
 
-        if self.recording:
-            self.audio_chunks.append(audio)
-
-        # Auto-trigger on new speaker (volume threshold based for simplicity)
-        if not self.recording and volume > 500:
-            # Simple trigger every 5 seconds
-            if time.time() - self.last_process_time > 5:
-                self.audio_chunks = [audio]
-                self.recording = True
-                self.last_process_time = time.time()
-        elif self.recording and volume < 300:
-            # If silent for 1 second, stop recording
-            if time.time() - self.last_process_time > 1:
-                self.recording = False
-                self.last_process_time = time.time()
-                audio_data = np.concatenate(self.audio_chunks).astype(np.int16)
-                save_and_process(audio_data)
+        if volume > self.threshold:
+            audio_q.put(audio.tobytes())
 
         return frame
 
-def save_and_process(audio_data):
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        import scipy.io.wavfile
-        scipy.io.wavfile.write(tmp.name, 16000, audio_data)
-        audio_file = open(tmp.name, "rb")
-        with st.spinner("Transcribing with Whisper..."):
-            result = openai.Audio.transcribe("whisper-1", audio_file)
-            question = result["text"]
-            st.session_state.last_transcript = question
+# Start recording from mic
+webrtc_streamer(key="mic",
+                mode="SENDONLY",
+                client_settings=ClientSettings(
+                    media_stream_constraints={"audio": True, "video": False},
+                    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+                ),
+                audio_processor_factory=AudioProcessor)
 
-            st.success(f"📥 Detected Question: {question}")
-            with st.spinner("Generating Answer with ChatGPT..."):
-                chat = openai.ChatCompletion.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": "You are a candidate giving perfect interview answers."},
-                        {"role": "user", "content": question},
-                    ],
-                )
-                answer = chat["choices"][0]["message"]["content"]
-                st.session_state.generated_answer = answer
+# Process when button clicked
+if st.button("🧠 Process Interviewer's Question"):
+    if audio_q.empty():
+        st.warning("No audio detected. Try speaking a little louder or closer to mic.")
+    else:
+        # Save to temporary WAV
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
+            while not audio_q.empty():
+                f.write(audio_q.get())
+            audio_path = f.name
 
-webrtc_streamer(key="stream", audio_processor_factory=VoiceCapture, media_stream_constraints={"video": False, "audio": True})
+        st.success("🎧 Audio recorded. Transcribing...")
 
-if st.session_state.get("generated_answer"):
-    st.header("📖 Read This Answer")
-    for i, sentence in enumerate(st.session_state["generated_answer"].split(". ")):
-        if sentence.strip():
-            st.markdown(f"**{i+1}.** {sentence.strip()}")
-        
+        # Transcribe with Whisper API
+        with open(audio_path, "rb") as af:
+            transcript = openai.Audio.transcribe("whisper-1", af)
+            question = transcript["text"]
+
+        st.markdown(f"#### 🗣️ Detected Question:")
+        st.info(question)
+
+        # Get ChatGPT answer
+        with st.spinner("Generating answer..."):
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You're an expert helping with interviews. Answer clearly and professionally."},
+                    {"role": "user", "content": f"{question}"}
+                ]
+            )
+            answer = response["choices"][0]["message"]["content"]
+
+        # Split answer into sentences for user to read
+        sentences = answer.split(". ")
+        st.markdown("### 📖 Read This Slowly:")
+        for i, s in enumerate(sentences):
+            st.markdown(f"**{i+1}.** {s.strip().rstrip('.')}.")
+
+        os.remove(audio_path)

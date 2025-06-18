@@ -1,59 +1,40 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, ClientSettings
-import openai, numpy as np, tempfile, os, queue
+import openai
+import tempfile
 
-st.set_page_config(page_title="Interview Assistant", layout="centered")
-st.title("🎤 Ahamed's Voice Interview AI")
-st.markdown("""
-The app listens automatically for the interviewer's voice (not yours), transcribes it with Whisper API, gets ChatGPT's answer, and shows it sentence‑by‑sentence for you to read aloud — all without manual input!
-""")
+st.title("🎙️ Interview Assistant (Voice-Based)")
+st.info("Ask your interviewer to speak. I will listen and reply using ChatGPT. You can read it out loud.")
 
 openai.api_key = st.secrets["OPENAI_API_KEY"]
 
-audio_q = queue.Queue()
+audio_file = st.file_uploader("Record or upload your question", type=["wav", "mp3", "m4a"])
 
-class Proc(AudioProcessorBase):
-    def recv(self, frame):
-        audio = frame.to_ndarray().flatten()
-        vol = np.abs(audio).mean()
-        if vol > 800:
-            audio_q.put(frame.to_ndarray().tobytes())
-        return frame
+if audio_file:
+    st.audio(audio_file)
 
-webrtc_streamer(key="mic",
-    mode="SENDONLY",
-    audio_processor_factory=Proc,
-    client_settings=ClientSettings(
-        media_stream_constraints={"audio": True, "video": False},
-        rtc_configuration={"iceServers":[{"urls": ["stun:stun.l.google.com:19302"]}]},
-    ),
-)
+    with st.spinner("Transcribing..."):
+        audio_bytes = audio_file.read()
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
 
-if st.button("🔄 Process Latest Question"):
-    if audio_q.empty():
-        st.warning("No audio detected. Please speak the interviewer's question louder.")
-    else:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
-            while not audio_q.empty():
-                f.write(audio_q.get())
-            path = f.name
+        whisper_response = openai.audio.transcriptions.create(
+            model="whisper-1",
+            file=open(tmp_path, "rb")
+        )
 
-        st.success("🎧 Audio captured, transcribing…")
-        with open(path, "rb") as af:
-            text = openai.Audio.transcribe("whisper-1", af)["text"]
-        st.markdown(f"#### 🗣️ Detected question:\n> {text}")
+        question = whisper_response.text
+        st.success(f"🎤 Interviewer Asked: {question}")
 
-        st.success("⏳ Getting ChatGPT answer…")
-        ans = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role":"system","content":"You are an interview coach giving professional concise answers."},
-                {"role":"user","content":text}
-            ],
-        )["choices"][0]["message"]["content"]
-
-        st.markdown("### 📖 Read this answer:")
-        for idx, sent in enumerate(ans.split(". "), start=1):
-            st.markdown(f"**{idx}.** {sent.strip().rstrip('.')}.")
-        os.remove(path)
-        
+        with st.spinner("Generating answer..."):
+            chat_response = openai.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "You're helping someone answer interview questions naturally."},
+                    {"role": "user", "content": question}
+                ]
+            )
+            answer = chat_response.choices[0].message.content
+            st.markdown("### ✅ Suggested Answer:")
+            st.write(answer)
+            

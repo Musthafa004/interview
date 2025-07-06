@@ -42,7 +42,7 @@ startBtn.onclick = async () => {
     startBtn.disabled = true;
     stopBtn.disabled = false;
   } catch (error) {
-    answerBox.innerText = "❌ Mic permission denied or error: " + error.message;
+    answerBox.innerText = "❌ Mic error: " + error.message;
   }
 };
 

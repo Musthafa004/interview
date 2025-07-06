@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Voice Interview Assistant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 1rem;
+      background: #f5f5f5;
+      color: #333;
+    }
+    h2 {
+      color: #444;
+    }
+    #recordBtn, #stopBtn {
+      font-size: 18px;
+      padding: 10px 20px;
+      margin: 10px;
+      border: none;
+      border-radius: 8px;
+    }
+    #recordBtn { background-color: #28a745; color: white; }
+    #stopBtn { background-color: #dc3545; color: white; }
+    #answerBox {
+      margin-top: 20px;
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+  <h2>🎤 Voice Interview Assistant</h2>
+  <button id="recordBtn">Start Recording</button>
+  <button id="stopBtn" disabled>Stop Recording</button>
+  <div id="answerBox">Answer will appear here...</div>
+
+  <script src="script.js"></script>
+</body>
+</html>

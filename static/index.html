@@ -1,14 +1,52 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>Voice Interview Assistant</title>
-  </head>
-  <body>
-    <h2>🎙️ Interview Voice Assistant</h2>
-    <button id="startBtn">▶️ Start Recording</button>
-    <button id="stopBtn" disabled>⏹️ Stop Recording</button>
-    <pre id="answer" style="white-space: pre-wrap;"></pre>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🎤 Voice Interview Assistant</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      background-color: #f9f9f9;
+      padding: 20px;
+    }
+    h2 {
+      margin-bottom: 30px;
+    }
+    button {
+      font-size: 18px;
+      padding: 15px 25px;
+      margin: 10px;
+      border: none;
+      border-radius: 8px;
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+    button:disabled {
+      background-color: #ccc;
+    }
+    pre {
+      background-color: #fff;
+      padding: 20px;
+      border-radius: 10px;
+      margin-top: 30px;
+      text-align: left;
+      font-size: 16px;
+      max-width: 90%;
+      margin-left: auto;
+      margin-right: auto;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h2>🎙️ Voice Interview Assistant</h2>
+  <button id="startBtn">▶️ Start Recording</button>
+  <button id="stopBtn" disabled>⏹️ Stop Recording</button>
+  <pre id="answer">Speak your interview question to get an AI answer.</pre>
 
-    <script src="script.js"></script>
-  </body>
+  <script src="script.js"></script>
+</body>
 </html>
